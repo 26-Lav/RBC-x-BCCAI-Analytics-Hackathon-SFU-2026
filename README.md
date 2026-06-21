@@ -68,3 +68,25 @@ These weights are analytical judgement calls grounded in the case logic, not agr
 ### Final Action List
 ![Final Action List](images/final_action_list.png)
 
+
+
+
+## How to Reproduce the Analysis
+
+1. Clone this repo
+2. Open RStudio
+3. Install dependencies: `install.packages(c("tidyverse", "corrplot", "RColorBrewer"))`
+4. Open `greenleaf_analysis_v2.Rmd`
+5. Set your working directory to the repo folder
+6. Click **Knit** — this runs all analysis and regenerates both dashboard CSVs
+
+## R Notebooks — View Online
+
+| Notebook | Description |
+|----------|-------------|
+| EDA | Stress distribution, alert analysis, correlation matrix |
+| Trend Analysis | Weekly stress trends, delay impact, ROI by action rate |
+| Financial Analysis | Season profitability, market prices, treatment ROI |
+
+
+
