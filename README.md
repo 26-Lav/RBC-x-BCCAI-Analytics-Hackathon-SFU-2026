@@ -1,5 +1,8 @@
 # RBC x BCCAI Analytics Hackathon SFU Beedie 2026
 
+**Note:** This repository contains independent analysis completed outside of the official hackathon submission. The dashboards, urgency scoring model, data pipeline, and R notebooks were built independently as an extended personal project exploring the GreenLeaf CEA dataset beyond the scope of the team submission.
+
+
 ## The Central Question
 Can precision agriculture technology meaningfully improve independent farmers' financial decision-making — and can that value be demonstrated with data?
 This is answered through the lens of GreenLeaf CEA, a hypothetical controlled environment agriculture operator running 8 farms, 20 greenhouses, and 120 experimental microplots across British Columbia.
