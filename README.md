@@ -29,12 +29,12 @@ Is the team keeping up, and does speed matter?
 2. V7 Delay Impact — Stress improvement by response speed bucket. Key finding: Same-day response produces stress delta of −0.049. Two-day delay produces −0.011. Speed cuts effectiveness by 78%.
 3. V8 Ranked Plot List — All plots sorted by urgency score with verdict badge. Key finding: P0087 rank 1, urgency score 100, action rate 29%, verdict Go Now.
 
-##### Urgency Score — How We Ranked the Plots
+#### Urgency Score — How We Ranked the Plots
 The ranked list is driven by a composite urgency score calculated per plot per week from four components drawn from daily_sensor_readings:
 
 Urgency Score = (0.40 × Max Stress Index) + (0.25 × Alert Frequency Rate) + (0.20 × Response Gap) + (0.15 × Delay Penalty)
 
-##### Component definitions
+#### Component definitions
 1. Max stress index = max(plant_stress_index) for the week. Captures severity of plant health damage. Weight 0.40.
 2. Alert frequency rate = alert_count divided by days_observed. Captures whether this is a sustained problem or a single spike. Weight 0.25.
 3. Response gap = 1 minus (action_count divided by alert_count). Captures the fraction of alerts left unanswered. Weight 0.20.
