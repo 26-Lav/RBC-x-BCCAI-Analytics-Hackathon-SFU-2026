@@ -56,5 +56,15 @@ Why these weights
 
 These weights are analytical judgement calls grounded in the case logic, not agronomic standards. They are intentionally tunable — a manager who prioritises response speed over raw stress can increase the delay weight. The model is a decision support tool, not a black box.
 
+## Dashboard Previews
 
+### Branch 1 — Alert Volume & Severity
+![Branch 1 Dashboard](images/branch1_dashboard1.png)
+![Branch 1 Dashboard](images/branch1_dashboard2.png)
+
+### Branch 2 — Response Speed & Action Rate
+![Branch 2 Dashboard](images/branch2_dashboard.png)
+
+### Final Action List
+![Final Action List](images/final_action_list.png)
 
