@@ -49,3 +49,8 @@ Why these weights
 4. Delay (0.15) matters but is the least important of the four — acting one day late is worse than same-day, but the plot still needs attention regardless.
 
 These weights are analytical judgement calls grounded in the case logic, not agronomic standards. They are intentionally tunable — a manager who prioritises response speed over raw stress can increase the delay weight. The model is a decision support tool, not a black box.
+
+
+## Tableau Dashboards:
+https://public.tableau.com/app/profile/lavika.singh5082/viz/Dashboard1_17820713582910/Branch1AlertVolumeSeverity1?publish=yes
+https://public.tableau.com/app/profile/lavika.singh5082/viz/Dashboard1_17820713582910/Branch1AlertVolumeSeverity2?publish=yes
