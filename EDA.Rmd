@@ -1,0 +1,274 @@
+---
+title: "GreenLeaf CEA — Agribusiness Analytics Hackathon 2026"
+subtitle: "Exploratory Data Analysis, Trend Analysis & Dashboard CSV Generation"
+author: "Lavika Singh"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+setwd('/Users/lavikasingh/Documents/SFU/Hackathons/Beedie RBC 2026 Hackathon/hackathon files')
+knitr::opts_chunk$set(
+  echo    = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width  = 12,
+  fig.height = 6,
+  fig.align  = "center"
+)
+```
+
+# 0. Setup — Load Libraries and Data
+
+```{r libraries}
+library(tidyverse)    # dplyr, ggplot2, tidyr, readr, purrr
+library(lubridate)    # date handling
+library(scales)       # axis formatting
+library(corrplot)     # correlation matrix
+library(RColorBrewer) # colour palettes
+```
+
+```{r load-data}
+sensor      <- read_csv("daily_sensor_readings.csv")
+costs       <- read_csv("daily_input_costs.csv")
+plots       <- read_csv("plots.csv")
+farms       <- read_csv("farms.csv")
+greenhouses <- read_csv("greenhouses.csv")
+inputs      <- read_csv("input_applications.csv")
+season      <- read_csv("season_summary.csv")
+scouting    <- read_csv("scouting_observations.csv")
+prices      <- read_csv("market_and_input_prices.csv")
+
+# Parse dates
+sensor   <- sensor   %>% mutate(date = as.Date(date))
+costs    <- costs    %>% mutate(date = as.Date(date))
+inputs   <- inputs   %>% mutate(date = as.Date(date))
+scouting <- scouting %>% mutate(date = as.Date(date))
+prices   <- prices   %>% mutate(date = as.Date(date))
+
+# Add time fields
+sensor <- sensor %>%
+  mutate(
+    week_num   = isoweek(date),
+    year       = year(date),
+    month      = month(date, label = TRUE),
+    week_label = paste0("Week ", week_num)
+  )
+
+cat("Data loaded successfully\n")
+cat("Sensor rows     :", nrow(sensor), "\n")
+cat("Date range      :", as.character(min(sensor$date)),
+    "to", as.character(max(sensor$date)), "\n")
+cat("Unique plots    :", n_distinct(sensor$plot_id), "\n")
+cat("Unique weeks    :", n_distinct(sensor$week_num), "\n")
+```
+
+---
+
+# 1. Dataset Overview
+
+```{r dataset-overview}
+overview <- data.frame(
+  Dataset = c("daily_sensor_readings","daily_input_costs","plots","farms",
+              "greenhouses","input_applications","season_summary",
+              "scouting_observations","market_and_input_prices"),
+  Rows    = c(nrow(sensor), nrow(costs), nrow(plots), nrow(farms),
+              nrow(greenhouses), nrow(inputs), nrow(season),
+              nrow(scouting), nrow(prices)),
+  Columns = c(ncol(sensor), ncol(costs), ncol(plots), ncol(farms),
+              ncol(greenhouses), ncol(inputs), ncol(season),
+              ncol(scouting), ncol(prices))
+)
+print(overview)
+```
+
+```{r missing-values}
+cat("=== Missing Values in Sensor Data ===\n")
+missing <- colSums(is.na(sensor))
+missing <- missing[missing > 0]
+print(round(missing / nrow(sensor) * 100, 1))
+```
+
+```{r crop-treatment-distribution}
+cat("=== Plot Distribution by Crop and Treatment ===\n")
+print(table(plots$crop, plots$treatment))
+```
+
+---
+
+# 2. EDA — Sensor Data
+
+## 2.1 Stress Index Distribution
+
+```{r stress-distribution}
+pct_high <- round(mean(sensor$plant_stress_index > 0.6) * 100, 1)
+
+ggplot(sensor, aes(x = plant_stress_index)) +
+  geom_histogram(bins = 50, fill = "#E05A4E", alpha = 0.8, colour = "white") +
+  geom_vline(xintercept = 0.6, colour = "darkred",
+             linetype = "dashed", linewidth = 1) +
+  geom_vline(xintercept = 0.7, colour = "black",
+             linetype = "dashed", linewidth = 1) +
+  annotate("text", x = 0.63, y = 1200,
+           label = "High stress (0.6)", size = 3.5, colour = "darkred") +
+  annotate("text", x = 0.73, y = 1000,
+           label = "Critical (0.7)", size = 3.5, colour = "black") +
+  scale_x_continuous(limits = c(0, 1)) +
+  labs(
+    title    = "Distribution of Plant Stress Index — Full Season",
+    subtitle = paste0(pct_high, "% of plot-days above 0.6 high stress threshold"),
+    x = "Plant Stress Index (0 = healthy, 1 = critical)",
+    y = "Number of plot-days"
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+```{r stress-by-crop}
+ggplot(sensor, aes(x = reorder(crop, plant_stress_index, median),
+                   y = plant_stress_index, fill = crop)) +
+  geom_boxplot(alpha = 0.8, outlier.alpha = 0.2) +
+  geom_hline(yintercept = 0.6, colour = "red", linetype = "dashed") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title    = "Plant Stress Index by Crop",
+    subtitle = "Red dashed line = high stress threshold (0.6)",
+    x = "Crop", y = "Plant Stress Index"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+```
+
+```{r stress-by-treatment}
+sensor %>%
+  left_join(plots %>% select(plot_id, treatment), by = "plot_id") %>%
+  group_by(treatment) %>%
+  summarise(avg_stress = mean(plant_stress_index), .groups = "drop") %>%
+  arrange(desc(avg_stress)) %>%
+  ggplot(aes(x = reorder(treatment, avg_stress),
+             y = avg_stress, fill = avg_stress)) +
+  geom_col(alpha = 0.9) +
+  geom_hline(yintercept = 0.6, colour = "red", linetype = "dashed") +
+  geom_text(aes(label = round(avg_stress, 3)), hjust = -0.2, size = 3.5) +
+  scale_fill_gradient(low = "#78C96B", high = "#E05A4E") +
+  coord_flip() +
+  labs(
+    title    = "Average Plant Stress Index by Treatment",
+    subtitle = "Shade and Reduced Pest treatments show highest stress",
+    x = "Treatment", y = "Average Plant Stress Index"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+```
+
+## 2.2 Alert Analysis
+
+```{r alert-overview}
+cat("=== Alert Type Distribution — Full Season ===\n")
+alert_counts <- sensor %>%
+  filter(alert_flag == 1) %>%
+  count(alert_type) %>%
+  mutate(pct = round(n / sum(n) * 100, 1)) %>%
+  arrange(desc(n))
+print(alert_counts)
+```
+
+```{r alert-by-crop}
+sensor %>%
+  filter(alert_flag == 1) %>%
+  count(crop, alert_type) %>%
+  ggplot(aes(x = reorder(alert_type, n), y = n, fill = crop)) +
+  geom_col(position = "dodge", alpha = 0.85) +
+  scale_fill_brewer(palette = "Set2") +
+  coord_flip() +
+  labs(
+    title = "Alert Count by Type and Crop — Full Season",
+    x = "Alert Type", y = "Number of Alerts", fill = "Crop"
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+```{r response-rate}
+cat("=== Overall Alert Response Summary ===\n")
+sensor %>%
+  filter(alert_flag == 1) %>%
+  summarise(
+    total_alerts  = n(),
+    total_actions = sum(action_taken, na.rm = TRUE),
+    action_rate   = round(mean(action_taken, na.rm = TRUE), 3),
+    avg_delay     = round(mean(action_delay_days, na.rm = TRUE), 3),
+    same_day_pct  = round(mean(action_delay_days == 0, na.rm = TRUE) * 100, 1)
+  ) %>%
+  print()
+```
+
+## 2.3 Correlation Analysis
+
+```{r correlation-matrix}
+cor_vars <- sensor %>%
+  select(
+    plant_stress_index, pest_pressure_index, disease_risk_index,
+    air_temp_c, relative_humidity_pct, vpd_kpa,
+    substrate_moisture, substrate_ec, canopy_temp_c, alert_flag
+  ) %>%
+  drop_na()
+
+cor_matrix <- cor(cor_vars)
+
+corrplot(
+  cor_matrix,
+  method      = "color",
+  type        = "upper",
+  tl.cex      = 0.8,
+  tl.col      = "black",
+  addCoef.col = "black",
+  number.cex  = 0.7,
+  col         = colorRampPalette(c("#4575B4","white","#D73027"))(200),
+  title       = "Correlation Matrix — Key Sensor Variables",
+  mar         = c(0, 0, 2, 0)
+)
+```
+
+---
+
+
+# 5. Key Findings Summary
+
+```{r key-findings}
+cat("=== FINDING 1 — Speed of Response ===\n")
+print(delay_analysis)
+
+cat("\n=== FINDING 2 — Action Rate vs Season ROI ===\n")
+print(roi_by_quartile)
+
+cat("\n=== FINDING 3 — Actions That Did Not Reduce Stress ===\n")
+pct_failed <- sensor %>%
+  filter(action_taken == 1, !is.na(post_action_stress_delta_3d)) %>%
+  summarise(pct_no_improvement =
+              round(mean(post_action_stress_delta_3d >= 0) * 100, 1))
+cat(pct_failed$pct_no_improvement,
+    "% of actions did not reduce stress (Act + Review cases)\n")
+
+cat("\n=== FINDING 4 — Stress by Treatment ===\n")
+sensor %>%
+  left_join(plots %>% select(plot_id, treatment), by = "plot_id") %>%
+  group_by(treatment) %>%
+  summarise(avg_stress = round(mean(plant_stress_index), 3),
+            .groups = "drop") %>%
+  arrange(desc(avg_stress)) %>%
+  print()
+```
+
+---
+
+# Session Info
+
+```{r session-info}
+sessionInfo()
+```
