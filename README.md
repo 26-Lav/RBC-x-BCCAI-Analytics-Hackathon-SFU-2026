@@ -4,6 +4,12 @@
 Can precision agriculture technology meaningfully improve independent farmers' financial decision-making — and can that value be demonstrated with data?
 This is answered through the lens of GreenLeaf CEA, a hypothetical controlled environment agriculture operator running 8 farms, 20 greenhouses, and 120 experimental microplots across British Columbia.
 
+## Tableau Dashboards:
+https://public.tableau.com/app/profile/lavika.singh5082/viz/Dashboard1_17820713582910/Branch1AlertVolumeSeverity1?publish=yes
+https://public.tableau.com/app/profile/lavika.singh5082/viz/Dashboard1_17820713582910/Branch1AlertVolumeSeverity2?publish=yes
+https://public.tableau.com/app/profile/lavika.singh5082/viz/Dashboard1_17820713582910/Branch2ResponseSpeedActionRate?publish=yes
+https://public.tableau.com/app/profile/lavika.singh5082/viz/Dashboard1_17820713582910/Dashboard4?publish=yes
+
 ## Approach 
 
 ### Question A: Weekly Alert Triage:  "Where should the farmer act first this morning?"
@@ -51,6 +57,4 @@ Why these weights
 These weights are analytical judgement calls grounded in the case logic, not agronomic standards. They are intentionally tunable — a manager who prioritises response speed over raw stress can increase the delay weight. The model is a decision support tool, not a black box.
 
 
-## Tableau Dashboards:
-https://public.tableau.com/app/profile/lavika.singh5082/viz/Dashboard1_17820713582910/Branch1AlertVolumeSeverity1?publish=yes
-https://public.tableau.com/app/profile/lavika.singh5082/viz/Dashboard1_17820713582910/Branch1AlertVolumeSeverity2?publish=yes
+
