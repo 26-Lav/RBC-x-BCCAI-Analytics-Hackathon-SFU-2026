@@ -238,37 +238,4 @@ corrplot(
 ---
 
 
-# 5. Key Findings Summary
 
-```{r key-findings}
-cat("=== FINDING 1 — Speed of Response ===\n")
-print(delay_analysis)
-
-cat("\n=== FINDING 2 — Action Rate vs Season ROI ===\n")
-print(roi_by_quartile)
-
-cat("\n=== FINDING 3 — Actions That Did Not Reduce Stress ===\n")
-pct_failed <- sensor %>%
-  filter(action_taken == 1, !is.na(post_action_stress_delta_3d)) %>%
-  summarise(pct_no_improvement =
-              round(mean(post_action_stress_delta_3d >= 0) * 100, 1))
-cat(pct_failed$pct_no_improvement,
-    "% of actions did not reduce stress (Act + Review cases)\n")
-
-cat("\n=== FINDING 4 — Stress by Treatment ===\n")
-sensor %>%
-  left_join(plots %>% select(plot_id, treatment), by = "plot_id") %>%
-  group_by(treatment) %>%
-  summarise(avg_stress = round(mean(plant_stress_index), 3),
-            .groups = "drop") %>%
-  arrange(desc(avg_stress)) %>%
-  print()
-```
-
----
-
-# Session Info
-
-```{r session-info}
-sessionInfo()
-```

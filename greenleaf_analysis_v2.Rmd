@@ -1,0 +1,680 @@
+---
+title: "GreenLeaf CEA — Agribusiness Analytics Hackathon 2026"
+subtitle: "Exploratory Data Analysis, Trend Analysis & Dashboard CSV Generation"
+author: "Team [Your Team Name]"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+setwd('/Users/lavikasingh/Documents/SFU/Hackathons/Beedie RBC 2026 Hackathon/hackathon files')
+knitr::opts_chunk$set(
+  echo    = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width  = 12,
+  fig.height = 6,
+  fig.align  = "center"
+)
+```
+
+# 0. Setup — Load Libraries and Data
+
+```{r libraries}
+library(tidyverse)    # dplyr, ggplot2, tidyr, readr, purrr
+library(lubridate)    # date handling
+library(scales)       # axis formatting
+library(corrplot)     # correlation matrix
+library(RColorBrewer) # colour palettes
+```
+
+```{r load-data}
+sensor      <- read_csv("daily_sensor_readings.csv")
+costs       <- read_csv("daily_input_costs.csv")
+plots       <- read_csv("plots.csv")
+farms       <- read_csv("farms.csv")
+greenhouses <- read_csv("greenhouses.csv")
+inputs      <- read_csv("input_applications.csv")
+season      <- read_csv("season_summary.csv")
+scouting    <- read_csv("scouting_observations.csv")
+prices      <- read_csv("market_and_input_prices.csv")
+
+# Parse dates
+sensor   <- sensor   %>% mutate(date = as.Date(date))
+costs    <- costs    %>% mutate(date = as.Date(date))
+inputs   <- inputs   %>% mutate(date = as.Date(date))
+scouting <- scouting %>% mutate(date = as.Date(date))
+prices   <- prices   %>% mutate(date = as.Date(date))
+
+# Add time fields
+sensor <- sensor %>%
+  mutate(
+    week_num   = isoweek(date),
+    year       = year(date),
+    month      = month(date, label = TRUE),
+    week_label = paste0("Week ", week_num)
+  )
+
+cat("Data loaded successfully\n")
+cat("Sensor rows     :", nrow(sensor), "\n")
+cat("Date range      :", as.character(min(sensor$date)),
+    "to", as.character(max(sensor$date)), "\n")
+cat("Unique plots    :", n_distinct(sensor$plot_id), "\n")
+cat("Unique weeks    :", n_distinct(sensor$week_num), "\n")
+```
+
+---
+
+# 1. Dataset Overview
+
+```{r dataset-overview}
+overview <- data.frame(
+  Dataset = c("daily_sensor_readings","daily_input_costs","plots","farms",
+              "greenhouses","input_applications","season_summary",
+              "scouting_observations","market_and_input_prices"),
+  Rows    = c(nrow(sensor), nrow(costs), nrow(plots), nrow(farms),
+              nrow(greenhouses), nrow(inputs), nrow(season),
+              nrow(scouting), nrow(prices)),
+  Columns = c(ncol(sensor), ncol(costs), ncol(plots), ncol(farms),
+              ncol(greenhouses), ncol(inputs), ncol(season),
+              ncol(scouting), ncol(prices))
+)
+print(overview)
+```
+
+```{r missing-values}
+cat("=== Missing Values in Sensor Data ===\n")
+missing <- colSums(is.na(sensor))
+missing <- missing[missing > 0]
+print(round(missing / nrow(sensor) * 100, 1))
+```
+
+```{r crop-treatment-distribution}
+cat("=== Plot Distribution by Crop and Treatment ===\n")
+print(table(plots$crop, plots$treatment))
+```
+
+---
+
+# 2. EDA — Sensor Data
+
+## 2.1 Stress Index Distribution
+
+```{r stress-distribution}
+pct_high <- round(mean(sensor$plant_stress_index > 0.6) * 100, 1)
+
+ggplot(sensor, aes(x = plant_stress_index)) +
+  geom_histogram(bins = 50, fill = "#E05A4E", alpha = 0.8, colour = "white") +
+  geom_vline(xintercept = 0.6, colour = "darkred",
+             linetype = "dashed", linewidth = 1) +
+  geom_vline(xintercept = 0.7, colour = "black",
+             linetype = "dashed", linewidth = 1) +
+  annotate("text", x = 0.63, y = 1200,
+           label = "High stress (0.6)", size = 3.5, colour = "darkred") +
+  annotate("text", x = 0.73, y = 1000,
+           label = "Critical (0.7)", size = 3.5, colour = "black") +
+  scale_x_continuous(limits = c(0, 1)) +
+  labs(
+    title    = "Distribution of Plant Stress Index — Full Season",
+    subtitle = paste0(pct_high, "% of plot-days above 0.6 high stress threshold"),
+    x = "Plant Stress Index (0 = healthy, 1 = critical)",
+    y = "Number of plot-days"
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+```{r stress-by-crop}
+ggplot(sensor, aes(x = reorder(crop, plant_stress_index, median),
+                   y = plant_stress_index, fill = crop)) +
+  geom_boxplot(alpha = 0.8, outlier.alpha = 0.2) +
+  geom_hline(yintercept = 0.6, colour = "red", linetype = "dashed") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title    = "Plant Stress Index by Crop",
+    subtitle = "Red dashed line = high stress threshold (0.6)",
+    x = "Crop", y = "Plant Stress Index"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+```
+
+```{r stress-by-treatment}
+sensor %>%
+  left_join(plots %>% select(plot_id, treatment), by = "plot_id") %>%
+  group_by(treatment) %>%
+  summarise(avg_stress = mean(plant_stress_index), .groups = "drop") %>%
+  arrange(desc(avg_stress)) %>%
+  ggplot(aes(x = reorder(treatment, avg_stress),
+             y = avg_stress, fill = avg_stress)) +
+  geom_col(alpha = 0.9) +
+  geom_hline(yintercept = 0.6, colour = "red", linetype = "dashed") +
+  geom_text(aes(label = round(avg_stress, 3)), hjust = -0.2, size = 3.5) +
+  scale_fill_gradient(low = "#78C96B", high = "#E05A4E") +
+  coord_flip() +
+  labs(
+    title    = "Average Plant Stress Index by Treatment",
+    subtitle = "Shade and Reduced Pest treatments show highest stress",
+    x = "Treatment", y = "Average Plant Stress Index"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+```
+
+## 2.2 Alert Analysis
+
+```{r alert-overview}
+cat("=== Alert Type Distribution — Full Season ===\n")
+alert_counts <- sensor %>%
+  filter(alert_flag == 1) %>%
+  count(alert_type) %>%
+  mutate(pct = round(n / sum(n) * 100, 1)) %>%
+  arrange(desc(n))
+print(alert_counts)
+```
+
+```{r alert-by-crop}
+sensor %>%
+  filter(alert_flag == 1) %>%
+  count(crop, alert_type) %>%
+  ggplot(aes(x = reorder(alert_type, n), y = n, fill = crop)) +
+  geom_col(position = "dodge", alpha = 0.85) +
+  scale_fill_brewer(palette = "Set2") +
+  coord_flip() +
+  labs(
+    title = "Alert Count by Type and Crop — Full Season",
+    x = "Alert Type", y = "Number of Alerts", fill = "Crop"
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+```{r response-rate}
+cat("=== Overall Alert Response Summary ===\n")
+sensor %>%
+  filter(alert_flag == 1) %>%
+  summarise(
+    total_alerts  = n(),
+    total_actions = sum(action_taken, na.rm = TRUE),
+    action_rate   = round(mean(action_taken, na.rm = TRUE), 3),
+    avg_delay     = round(mean(action_delay_days, na.rm = TRUE), 3),
+    same_day_pct  = round(mean(action_delay_days == 0, na.rm = TRUE) * 100, 1)
+  ) %>%
+  print()
+```
+
+## 2.3 Correlation Analysis
+
+```{r correlation-matrix}
+cor_vars <- sensor %>%
+  select(
+    plant_stress_index, pest_pressure_index, disease_risk_index,
+    air_temp_c, relative_humidity_pct, vpd_kpa,
+    substrate_moisture, substrate_ec, canopy_temp_c, alert_flag
+  ) %>%
+  drop_na()
+
+cor_matrix <- cor(cor_vars)
+
+corrplot(
+  cor_matrix,
+  method      = "color",
+  type        = "upper",
+  tl.cex      = 0.8,
+  tl.col      = "black",
+  addCoef.col = "black",
+  number.cex  = 0.7,
+  col         = colorRampPalette(c("#4575B4","white","#D73027"))(200),
+  title       = "Correlation Matrix — Key Sensor Variables",
+  mar         = c(0, 0, 2, 0)
+)
+```
+
+---
+
+# 3. Trend Analysis
+
+## 3.1 Weekly Stress Trend
+
+```{r weekly-stress-trend}
+weekly_stress <- sensor %>%
+  group_by(week_num) %>%
+  summarise(
+    avg_stress   = mean(plant_stress_index),
+    max_stress   = max(plant_stress_index),
+    alert_count  = sum(alert_flag),
+    action_count = sum(action_taken, na.rm = TRUE),
+    action_rate  = mean(action_taken[alert_flag == 1], na.rm = TRUE),
+    .groups = "drop"
+  )
+
+ggplot(weekly_stress, aes(x = week_num)) +
+  geom_ribbon(aes(ymin = avg_stress - 0.05, ymax = avg_stress + 0.05),
+              fill = "#E05A4E", alpha = 0.2) +
+  geom_line(aes(y = avg_stress), colour = "#E05A4E", linewidth = 1.2) +
+  geom_point(aes(y = avg_stress, size = alert_count),
+             colour = "#E05A4E", alpha = 0.7) +
+  geom_hline(yintercept = 0.6, linetype = "dashed", colour = "darkred") +
+  annotate("text", x = max(weekly_stress$week_num), y = 0.62,
+           label = "High stress threshold", hjust = 1,
+           size = 3, colour = "darkred") +
+  scale_size_continuous(name = "Alert count", range = c(2, 8)) +
+  scale_x_continuous(breaks = seq(7, 37, by = 2)) +
+  labs(
+    title    = "Weekly Average Plant Stress Index — Full Season",
+    subtitle = "Point size = number of alerts that week",
+    x = "Week Number", y = "Avg Plant Stress Index"
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+## 3.2 Weekly Response Rate Trend
+
+```{r weekly-response-trend}
+ggplot(weekly_stress, aes(x = week_num)) +
+  geom_col(aes(y = alert_count / max(alert_count)),
+           fill = "#AFA9EC", alpha = 0.5) +
+  geom_line(aes(y = action_rate), colour = "#0F6E56", linewidth = 1.2) +
+  geom_point(aes(y = action_rate), colour = "#0F6E56", size = 2) +
+  geom_hline(yintercept = 0.5, linetype = "dashed", colour = "red") +
+  scale_x_continuous(breaks = seq(7, 37, by = 2)) +
+  labs(
+    title    = "Weekly Action Rate vs Alert Volume — Full Season",
+    subtitle = "Green line = action rate | Purple bars = alert volume | Red = 50% threshold",
+    x = "Week Number",
+    y = "Action Rate / Normalised Alert Count"
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+## 3.3 Delay Impact on Stress Outcomes
+
+```{r delay-impact}
+delay_analysis <- sensor %>%
+  filter(action_taken == 1, !is.na(post_action_stress_delta_3d)) %>%
+  mutate(
+    delay_bucket = case_when(
+      action_delay_days == 0 ~ "Same day (0d)",
+      action_delay_days == 1 ~ "1 day later",
+      action_delay_days == 2 ~ "2 days later",
+      TRUE ~ "Other"
+    )
+  ) %>%
+  filter(delay_bucket != "Other") %>%
+  group_by(delay_bucket) %>%
+  summarise(
+    count        = n(),
+    avg_delta    = mean(post_action_stress_delta_3d),
+    pct_improved = mean(post_action_stress_delta_3d < 0) * 100,
+    .groups = "drop"
+  ) %>%
+  mutate(delay_bucket = factor(delay_bucket,
+    levels = c("Same day (0d)", "1 day later", "2 days later")))
+
+cat("=== Delay Impact on Stress Outcomes ===\n")
+print(delay_analysis)
+
+ggplot(delay_analysis, aes(x = delay_bucket, y = avg_delta,
+                           fill = delay_bucket)) +
+  geom_col(alpha = 0.9, width = 0.6) +
+  geom_text(aes(label = round(avg_delta, 3)),
+            vjust = 1.5, colour = "white",
+            fontface = "bold", size = 4.5) +
+  geom_hline(yintercept = 0, colour = "black", linewidth = 0.8) +
+  scale_fill_manual(values = c(
+    "Same day (0d)" = "#0F6E56",
+    "1 day later"   = "#F5A623",
+    "2 days later"  = "#E05A4E"
+  )) +
+  labs(
+    title    = "Impact of Response Speed on Stress Reduction",
+    subtitle = "Same-day response is 78% more effective than a 2-day delay",
+    x       = "Response Speed",
+    y       = "Avg Stress Delta (3 days post-action)",
+    caption = "Negative = stress improved. Green = best, Red = worst."
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+```
+
+## 3.4 Season ROI by Action Rate Quartile
+
+```{r roi-by-action-rate}
+week14_summary <- sensor %>%
+  filter(week_num == 14) %>%
+  group_by(plot_id) %>%
+  summarise(
+    alert_count  = sum(alert_flag),
+    action_count = sum(action_taken, na.rm = TRUE),
+    max_stress   = max(plant_stress_index),
+    avg_stress   = mean(plant_stress_index),
+    avg_delay    = mean(action_delay_days, na.rm = TRUE),
+    avg_delta    = mean(post_action_stress_delta_3d, na.rm = TRUE),
+    days         = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    alert_rate      = alert_count / days,
+    action_rate     = ifelse(alert_count > 0, action_count / alert_count, 0),
+    action_quartile = ntile(action_rate, 4)
+  ) %>%
+  left_join(season, by = "plot_id")
+
+roi_by_quartile <- week14_summary %>%
+  group_by(action_quartile) %>%
+  summarise(
+    avg_roi           = round(mean(season_roi, na.rm = TRUE), 3),
+    avg_prec_benefit  = round(mean(precision_benefit_cad, na.rm = TRUE), 0),
+    n_plots           = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(label = c("Q1 Low","Q2","Q3","Q4 High"))
+
+cat("=== Season ROI by Action Rate Quartile ===\n")
+print(roi_by_quartile)
+
+ggplot(roi_by_quartile, aes(x = label, y = avg_roi, fill = label)) +
+  geom_col(alpha = 0.85, width = 0.6) +
+  geom_text(aes(label = round(avg_roi, 3)), vjust = -0.5, size = 4) +
+  scale_fill_manual(values = c(
+    "Q1 Low" = "#E05A4E",
+    "Q2"     = "#F5A623",
+    "Q3"     = "#78C96B",
+    "Q4 High"= "#0F6E56"
+  )) +
+  labs(
+    title    = "Season ROI by Alert Response Rate Quartile — Week 14",
+    subtitle = "Plots responding to more alerts earned higher end-of-season ROI",
+    x = "Action Rate Quartile", y = "Average Season ROI"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+```
+
+## 3.5 Precision vs Routine Actions
+
+```{r precision-vs-routine}
+cat("=== Stress Outcomes: Precision vs Routine Actions ===\n")
+inputs %>%
+  left_join(
+    sensor %>% select(date, plot_id, post_action_stress_delta_3d),
+    by = c("date","plot_id")
+  ) %>%
+  filter(!is.na(post_action_stress_delta_3d)) %>%
+  mutate(action_type = ifelse(
+    is_precision_action == 1, "Precision", "Routine")) %>%
+  group_by(action_type) %>%
+  summarise(
+    avg_delta    = round(mean(post_action_stress_delta_3d), 4),
+    pct_improved = round(mean(post_action_stress_delta_3d < 0) * 100, 1),
+    avg_cost     = round(mean(total_cost, na.rm = TRUE), 2),
+    count        = n(),
+    .groups = "drop"
+  ) %>%
+  print()
+```
+
+---
+
+# 4. Financial Analysis
+
+## 4.1 Season Profitability by Crop
+
+```{r profitability-overview}
+cat("=== Season Financial Summary by Crop ===\n")
+season %>%
+  left_join(plots %>% select(plot_id, crop, treatment), by = "plot_id") %>%
+  group_by(crop) %>%
+  summarise(
+    avg_yield        = round(mean(season_yield_kg_m2), 2),
+    avg_marketable   = round(mean(marketable_ratio) * 100, 1),
+    avg_revenue      = round(mean(season_revenue_cad), 0),
+    avg_cost         = round(mean(total_cost_cad), 0),
+    avg_profit       = round(mean(season_profit_cad), 0),
+    avg_roi          = round(mean(season_roi), 3),
+    avg_prec_benefit = round(mean(precision_benefit_cad), 0),
+    .groups = "drop"
+  ) %>%
+  print()
+```
+
+```{r roi-by-treatment}
+season %>%
+  left_join(plots %>% select(plot_id, treatment), by = "plot_id") %>%
+  group_by(treatment) %>%
+  summarise(avg_roi = mean(season_roi), .groups = "drop") %>%
+  arrange(desc(avg_roi)) %>%
+  ggplot(aes(x = reorder(treatment, avg_roi),
+             y = avg_roi, fill = avg_roi)) +
+  geom_col(alpha = 0.85) +
+  geom_text(aes(label = round(avg_roi, 3)), hjust = -0.2, size = 3.5) +
+  scale_fill_gradient(low = "#E05A4E", high = "#0F6E56") +
+  coord_flip() +
+  labs(
+    title = "Average Season ROI by Treatment",
+    x = "Treatment", y = "Average Season ROI"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+```
+
+## 4.2 Market Price Trends
+
+```{r market-prices}
+prices %>%
+  ggplot(aes(x = date, y = price, colour = item)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 1.5, alpha = 0.6) +
+  facet_wrap(~item, scales = "free_y", ncol = 2) +
+  scale_colour_brewer(palette = "Set1") +
+  labs(
+    title = "Market Input Price Trends — Full Season",
+    x = "Date", y = "Price (CAD)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none")
+```
+
+---
+
+# 5. Generate CSVs for Tableau Dashboards
+
+## 5.1 greenleaf_master_flat.csv
+
+```{r build-master-flat}
+master_flat <- sensor %>%
+  left_join(
+    plots %>% select(plot_id, treatment, treatment_block,
+                     plot_area_m2, plant_density_plants_m2, row_orientation),
+    by = "plot_id"
+  ) %>%
+  left_join(
+    greenhouses %>% select(greenhouse_id, structure_type, heating_system,
+                           irrigation_system, sensor_density_per_100m2),
+    by = "greenhouse_id"
+  ) %>%
+  left_join(
+    farms %>% select(farm_id, farm_name, region,
+                     climate_zone, production_system),
+    by = "farm_id"
+  ) %>%
+  left_join(
+    costs %>% select(date, plot_id, daily_energy_cost, daily_fertilizer_cost,
+                     daily_labor_cost, daily_pesticide_cost, daily_water_cost,
+                     daily_total_input_cost, daily_precision_cost,
+                     daily_precision_actions_count, daily_total_actions_count,
+                     daily_routine_cost),
+    by = c("date","plot_id")
+  ) %>%
+  left_join(
+    season %>% select(plot_id, season_yield_kg_m2, marketable_ratio,
+                      season_revenue_cad, total_cost_cad, season_profit_cad,
+                      season_roi, precision_benefit_cad),
+    by = "plot_id"
+  ) %>%
+  mutate(
+    high_stress_flag     = as.integer(plant_stress_index > 0.6),
+    critical_stress_flag = as.integer(plant_stress_index > 0.7),
+    action_delay_bucket  = case_when(
+      action_delay_days == 0 ~ "Same day",
+      action_delay_days == 1 ~ "1 day",
+      action_delay_days == 2 ~ "2 days",
+      TRUE ~ "No action"
+    ),
+    stress_outcome = case_when(
+      post_action_stress_delta_3d < 0 ~ "Improved",
+      post_action_stress_delta_3d > 0 ~ "Worsened",
+      TRUE ~ "No change"
+    ),
+    alert_type_clean         = replace_na(alert_type, "No Alert"),
+    recommended_action_clean = replace_na(recommended_action, "No Recommendation")
+  )
+
+cat("Master flat:", nrow(master_flat), "rows x",
+    ncol(master_flat), "columns\n")
+
+write_csv(master_flat, "greenleaf_master_flat.csv")
+cat("Saved: greenleaf_master_flat.csv\n")
+```
+
+## 5.2 branch2_plot_weekly_scores.csv
+
+```{r build-branch2-scores}
+# Most common recommended action per plot per week
+recommended <- sensor %>%
+  filter(alert_flag == 1, !is.na(recommended_action)) %>%
+  group_by(week_num, plot_id) %>%
+  summarise(
+    top_recommended_action = names(sort(table(recommended_action),
+                                        decreasing = TRUE))[1],
+    dominant_alert_type    = names(sort(table(alert_type),
+                                        decreasing = TRUE))[1],
+    .groups = "drop"
+  )
+
+branch2 <- sensor %>%
+  group_by(week_num, plot_id) %>%
+  summarise(
+    alert_count      = sum(alert_flag),
+    days_observed    = n(),
+    action_count     = sum(action_taken, na.rm = TRUE),
+    avg_delay        = mean(action_delay_days, na.rm = TRUE),
+    max_delay        = max(action_delay_days, na.rm = TRUE),
+    avg_stress       = mean(plant_stress_index),
+    max_stress       = max(plant_stress_index),
+    avg_delta        = mean(post_action_stress_delta_3d, na.rm = TRUE),
+    same_day_actions = sum(action_delay_days == 0, na.rm = TRUE),
+    delayed_actions  = sum(action_delay_days > 0, na.rm = TRUE),
+    crop             = first(crop),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    alert_rate   = alert_count / days_observed,
+    action_rate  = ifelse(alert_count > 0,
+                          action_count / alert_count, 0),
+    response_gap = 1 - action_rate,
+    delay_score  = avg_delay / 2,
+    urgency_score = 0.40 * max_stress +
+                    0.25 * alert_rate +
+                    0.20 * response_gap +
+                    0.15 * delay_score,
+    urgency_100  = round(urgency_score / max(urgency_score) * 100, 1)
+  ) %>%
+  group_by(week_num) %>%
+  mutate(rank = rank(desc(urgency_100), ties.method = "dense")) %>%
+  ungroup() %>%
+  left_join(
+    plots %>% select(plot_id, treatment, treatment_block,
+                     greenhouse_id, farm_id),
+    by = "plot_id"
+  ) %>%
+  left_join(
+    season %>% select(plot_id, season_roi, precision_benefit_cad,
+                      season_profit_cad, season_yield_kg_m2, marketable_ratio),
+    by = "plot_id"
+  ) %>%
+  mutate(
+    verdict = case_when(
+      action_rate < 0.40 & max_stress > 0.70 ~ "Go Now",
+      avg_delta > 0 & action_count > 0        ~ "Act + Review",
+      action_rate >= 0.70 & avg_delta < 0     ~ "Acting & Working",
+      urgency_100 >= 90                        ~ "High Priority",
+      TRUE                                     ~ "Monitor"
+    ),
+    verdict_sort = case_when(
+      verdict == "Go Now"           ~ 1,
+      verdict == "High Priority"    ~ 2,
+      verdict == "Act + Review"     ~ 3,
+      verdict == "Acting & Working" ~ 4,
+      TRUE                          ~ 5
+    )
+  ) %>%
+  left_join(recommended, by = c("week_num","plot_id")) %>%
+  mutate(
+    top_recommended_action = replace_na(top_recommended_action, "No alerts"),
+    dominant_alert_type    = replace_na(dominant_alert_type, "No alerts")
+  )
+
+cat("Branch2:", nrow(branch2), "rows x", ncol(branch2), "columns\n")
+cat("Weeks:", n_distinct(branch2$week_num), "\n")
+
+write_csv(branch2, "branch2_plot_weekly_scores.csv")
+cat("Saved: branch2_plot_weekly_scores.csv\n")
+```
+
+## 5.3 Validation — Week 14 Top 10
+
+```{r validate-week14}
+cat("=== Week 14 Top 10 Plots by Urgency Score ===\n")
+branch2 %>%
+  filter(week_num == 14) %>%
+  arrange(verdict_sort, desc(urgency_100)) %>%
+  head(10) %>%
+  select(rank, plot_id, crop, treatment, urgency_100,
+         max_stress, alert_count, action_rate,
+         avg_delay, avg_delta, verdict,
+         top_recommended_action) %>%
+  print()
+```
+
+---
+
+# 6. Key Findings Summary
+
+```{r key-findings}
+cat("=== FINDING 1 — Speed of Response ===\n")
+print(delay_analysis)
+
+cat("\n=== FINDING 2 — Action Rate vs Season ROI ===\n")
+print(roi_by_quartile)
+
+cat("\n=== FINDING 3 — Actions That Did Not Reduce Stress ===\n")
+pct_failed <- sensor %>%
+  filter(action_taken == 1, !is.na(post_action_stress_delta_3d)) %>%
+  summarise(pct_no_improvement =
+              round(mean(post_action_stress_delta_3d >= 0) * 100, 1))
+cat(pct_failed$pct_no_improvement,
+    "% of actions did not reduce stress (Act + Review cases)\n")
+
+cat("\n=== FINDING 4 — Stress by Treatment ===\n")
+sensor %>%
+  left_join(plots %>% select(plot_id, treatment), by = "plot_id") %>%
+  group_by(treatment) %>%
+  summarise(avg_stress = round(mean(plant_stress_index), 3),
+            .groups = "drop") %>%
+  arrange(desc(avg_stress)) %>%
+  print()
+```
+
+---
+
+# Session Info
+
+```{r session-info}
+sessionInfo()
+```
